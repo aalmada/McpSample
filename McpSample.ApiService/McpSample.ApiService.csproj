@@ -16,12 +16,7 @@
     <PackageReference Include="CommunityToolkit.Aspire.OllamaSharp" Version="9.7.0" />
 
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.63.0" />
-
-    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Qdrant" Version="1.63.0-preview" />
-    <PackageReference Include="Microsoft.SemanticKernel.Plugins.Memory" Version="1.63.0-alpha" />	  
-
-    <PackageReference Include="Microsoft.KernelMemory.Core" Version="0.98.250508.3" />
-    <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.18.2-alpha" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.63.0-alpha" />  
   </ItemGroup>
 
 </Project>

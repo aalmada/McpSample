@@ -1,10 +1,9 @@
-using System.Text.Json;
 using McpSample.ApiService.Models;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Scalar.AspNetCore;
 using Asp.Versioning;
+using Microsoft.SemanticKernel;
+using OllamaSharp;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +12,8 @@ builder.AddServiceDefaults();
 
 // Add services to the container.
 builder.Services.AddProblemDetails();
+
+builder.Services.AddOpenApi();
 
 // Add API versioning
 builder.Services.AddApiVersioning(options =>
@@ -23,12 +24,20 @@ builder.Services.AddApiVersioning(options =>
     options.ApiVersionReader = new HeaderApiVersionReader("api-version");
 });
 
-// Register chatbot service
-builder.Services.AddHttpClient();
-// builder.Services.AddScoped<McpSample.ApiService.Services.IChatbotService, McpSample.ApiService.Services.ChatbotService>();
-
-// Register OllamaSharp client using Aspire connection name
+// Register OllamaApiClient using Aspire connection name
 builder.AddOllamaApiClient("ollama");
+
+// Register Semantic Kernel with Ollama chat completion
+builder.Services.AddSingleton(sp =>
+{
+    var ollamaClient = sp.GetRequiredService<IOllamaApiClient>();
+
+    var kernel = Kernel.CreateBuilder()
+        .AddOllamaChatCompletion((OllamaApiClient)ollamaClient)
+        .Build();
+
+    return kernel;
+});
 
 var app = builder.Build();
 
@@ -48,51 +57,28 @@ if (app.Environment.IsDevelopment())
 // Map endpoints
 app.MapDefaultEndpoints();
 
-// Define an API version set using the builder extension
+// Define an API version set
 var apiVersionSet = app.NewApiVersionSet()
     .HasApiVersion(new ApiVersion(1, 0))
     .ReportApiVersions()
     .Build();
 
-var chatGroup = app.MapGroup("/api/chat")
+// Minimal API endpoints for chatbot
+var apiGroup = app.MapGroup("/api")
     .WithApiVersionSet(apiVersionSet)
     .WithTags("Chatbot");
 
-// Minimal API endpoints for chatbot
-chatGroup.MapPost("stream",
-    async (HttpContext context, Kernel kernel) =>
+apiGroup.MapPost("/chat", async (ChatRequest request, Kernel kernel) =>
     {
-        var userMessage = await JsonSerializer.DeserializeAsync<ChatInput>(context.Request.Body);
-
-        if (userMessage == null)
+        if (string.IsNullOrWhiteSpace(request.Message))
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsync("Invalid or missing chat input.");
-            return;
+            return Results.BadRequest("Message cannot be empty.");
         }
 
-        context.Response.Headers.Append("Content-Type", "text/event-stream");
-
-        var agent = new ChatCompletionAgent
-        {
-            Instructions = "You are a helpful assistant.",
-            Kernel = kernel
-        };
-
-        var thread = new ChatHistoryAgentThread();
-        var message = new ChatMessageContent(AuthorRole.User, userMessage.Text);
-
-        await foreach (var chunk in agent.InvokeStreamingAsync(message, thread))
-        {
-            var data = chunk.Message.Content?.Replace("\n", "\\n"); // Escape newlines for SSE
-            if (data is not null)
-            {
-                await context.Response.WriteAsync($"data: {data}\n\n");
-            }
-            await context.Response.Body.FlushAsync();
-        }
+        var result = await kernel.InvokePromptAsync(request.Message);
+        return Results.Ok(new ChatResponse(result.ToString()));
     })
-    .WithName("ChatbotChat")
+    .WithName("Chat")
     .HasApiVersion(new ApiVersion(1, 0))
     .WithSummary("Chat with the chatbot.")
     .WithDescription("Sends a message to the chatbot and receives a response.");
